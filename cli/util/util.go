@@ -952,3 +952,14 @@ func CollectAppList(baseDir string, appsPath string, verbose bool) ([]AppListEnt
 
 	return apps, nil
 }
+
+// ContainsFile checks if a file is present in a slice.
+func ContainsFile(fileList []fs.DirEntry, fileName string) bool {
+	for _, f := range fileList {
+		if f.Name() == fileName {
+			return true
+		}
+	}
+
+	return false
+}
