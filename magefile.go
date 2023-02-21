@@ -32,6 +32,7 @@ const (
 
 var (
 	ldflags = []string{
+		"-linkmode=external", "-extldflags", "-static",
 		"-s", "-w",
 		"-X ${PACKAGE}/version.gitTag=${GIT_TAG}",
 		"-X ${PACKAGE}/version.gitCommit=${GIT_COMMIT}",
@@ -153,7 +154,7 @@ func Build() error {
 	err := sh.RunWith(
 		getBuildEnvironment(), goExecutableName, "build",
 		"-o", ttExecutableName,
-		"-tags=go_tarantool_ssl_disable",
+		"-tags=netgo,osusergo,openssl_static",
 		"-ldflags", strings.Join(ldflags, " "),
 		"-asmflags", asmflags,
 		"-gcflags", gcflags,
@@ -320,6 +321,6 @@ func getBuildEnvironment() map[string]string {
 		"VERSION_LABEL": os.Getenv("VERSION_LABEL"),
 		"PWD":           currentDir,
 		"CONFIG_PATH":   getDefaultConfigPath(),
-		"CGO_ENABLED":   "0",
+		"CGO_ENABLED":   "1",
 	}
 }
