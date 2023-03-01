@@ -21,10 +21,12 @@ func SortEEVersions(versions []EEVersion) {
 
 		left := []uint64{verLeft.VersionInfo.Major, verLeft.VersionInfo.Minor,
 			verLeft.VersionInfo.Patch, uint64(verLeft.VersionInfo.Release.Type),
-			verLeft.VersionInfo.Release.Num, verLeft.VersionInfo.Additional, verLeft.VersionInfo.Revision}
+			verLeft.VersionInfo.Release.Num, verLeft.VersionInfo.Additional,
+			verLeft.VersionInfo.Revision}
 		right := []uint64{verRight.VersionInfo.Major, verRight.VersionInfo.Minor,
 			verRight.VersionInfo.Patch, uint64(verRight.VersionInfo.Release.Type),
-			verRight.VersionInfo.Release.Num, verRight.VersionInfo.Additional, verRight.VersionInfo.Revision}
+			verRight.VersionInfo.Release.Num, verRight.VersionInfo.Additional,
+			verRight.VersionInfo.Revision}
 
 		largestLen := util.Max(len(left), len(right))
 

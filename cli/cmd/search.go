@@ -3,13 +3,16 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/tarantool/tt/cli/cmdcontext"
+	"github.com/tarantool/tt/cli/install_ee"
 	"github.com/tarantool/tt/cli/modules"
 	"github.com/tarantool/tt/cli/search"
 	"github.com/tarantool/tt/cli/util"
 )
 
 var (
-	local bool
+	local        bool
+	includeDev   bool
+	includeDebug bool
 )
 
 // NewSearchCmd creates search command.
@@ -31,6 +34,10 @@ func NewSearchCmd() *cobra.Command {
 	}
 	searchCmd.Flags().BoolVarP(&local, "local-repo", "", false,
 		"search in local files")
+	searchCmd.Flags().BoolVarP(&includeDev, "dev", "", false,
+		"include dev builds of tarantool-ee SDK")
+	searchCmd.Flags().BoolVarP(&includeDebug, "dbg", "", false,
+		"include debug builds of tarantool-ee SDK")
 	return searchCmd
 }
 
@@ -46,10 +53,11 @@ func internalSearchModule(cmdCtx *cmdcontext.CmdCtx, args []string) error {
 	if len(args) != 1 {
 		return util.NewArgError("incorrect arguments")
 	}
+	searchCtx := install_ee.SearchEECtx{Dbg: includeDebug, Dev: includeDev}
 	if local {
 		err = search.SearchVersionsLocal(cmdCtx, cliOpts, args[0])
 	} else {
-		err = search.SearchVersions(cmdCtx, cliOpts, args[0])
+		err = search.SearchVersions(cmdCtx, searchCtx, cliOpts, args[0])
 	}
 	return err
 }

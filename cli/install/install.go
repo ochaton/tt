@@ -894,21 +894,44 @@ func installTarantool(version string, binDir string, incDir string,
 
 // getTarantoolEEVersions returns all available versions of tarantool-ee for user's OS.
 func getTarantoolEEVersions(cliOpts *config.CliOpts, local bool,
-	files []string) ([]version.Version, error) {
-	versions := []version.Version{}
+	files []string, expectedVersion string) (*install_ee.EEVersion, error) {
+	versions := []install_ee.EEVersion{}
 	var err error
 
 	if local {
 		versions, err = install_ee.FetchVersionsLocal(files)
 	} else {
-		versions, err = install_ee.FetchVersions(cliOpts)
+		if expectedVersion == "" {
+			searchCtx := install_ee.SearchEECtx{Dbg: false, Dev: false}
+			versions, err = install_ee.FetchVersions(searchCtx, cliOpts)
+			if err != nil {
+				return nil, err
+			}
+			if len(versions) == 0 {
+				return nil, fmt.Errorf("no version found")
+			}
+			return &versions[len(versions)-1], nil
+		} else {
+			searchContexts := []install_ee.SearchEECtx{
+				{Dbg: false, Dev: false},
+				{Dbg: false, Dev: true},
+				{Dbg: true, Dev: true},
+			}
+			for _, searchCtx := range searchContexts {
+				versions, err = install_ee.FetchVersions(searchCtx, cliOpts)
+				if err != nil {
+					return nil, err
+				}
+				for _, ver := range versions {
+					if ver.VersionInfo.Str == expectedVersion {
+						return &ver, nil
+					}
+				}
+			}
+		}
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return versions, nil
+	return nil, fmt.Errorf("%s version of tarantool-ee doesn't exist", expectedVersion)
 }
 
 // installTarantoolEE installs selected version of tarantool-ee.
@@ -924,37 +947,20 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 		}
 
 		for _, file := range localFiles {
-			if strings.Contains(file.Name(), "tarantool-enterprise-bundle") && !file.IsDir() {
+			if strings.Contains(file.Name(), "tarantool-enterprise-sdk") && !file.IsDir() {
 				files = append(files, file.Name())
 			}
 		}
 	}
-	versions, err := getTarantoolEEVersions(cliOpts, installCtx.Local, files)
-	if err != nil {
-		return err
-	}
 
-	// Get latest version if it was not specified.
 	_, tarVersion, _ := strings.Cut(version, search.VersionCliSeparator)
 	if tarVersion == "" {
 		log.Infof("Getting latest tarantool-ee version..")
-		if len(versions) == 0 {
-			return fmt.Errorf("no version found")
-		}
-
-		tarVersion = versions[len(versions)-1].Str
 	}
 
-	// Check that the version exists.
-	versionFound := false
-	for _, ver := range versions {
-		if tarVersion == ver.Str {
-			versionFound = true
-			break
-		}
-	}
-	if !versionFound {
-		return fmt.Errorf("%s version of tarantool-ee doesn't exist", tarVersion)
+	ver, err := getTarantoolEEVersions(cliOpts, installCtx.Local, files, tarVersion)
+	if err != nil {
+		return err
 	}
 
 	// Check bin and header dirs.
@@ -983,12 +989,8 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 	// Check if program is already installed.
 	log.Infof("Checking existing...")
 	log.Infof("Getting bundle name for %s", tarVersion)
-	bundleName := ""
-	for _, ver := range versions {
-		if ver.Str == tarVersion {
-			bundleName = ver.Tarball
-		}
-	}
+	bundleName := ver.VersionInfo.Tarball
+	bundleSource := ver.Prefix
 
 	version = "tarantool-ee" + search.VersionFsSeparator + tarVersion
 	if !installCtx.Reinstall {
@@ -1028,7 +1030,7 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 		}
 	} else {
 		log.Infof("Downloading tarantool-ee...")
-		err := install_ee.GetTarantoolEE(cliOpts, bundleName, path)
+		err := install_ee.GetTarantoolEE(cliOpts, bundleName, bundleSource, path)
 		if err != nil {
 			printLog(logFile.Name())
 			return err

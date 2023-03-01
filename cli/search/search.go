@@ -160,7 +160,8 @@ func printVersion(bindir string, program string, version string) {
 }
 
 // SearchVersions outputs available versions of program.
-func SearchVersions(cmdCtx *cmdcontext.CmdCtx, cliOpts *config.CliOpts, program string) error {
+func SearchVersions(cmdCtx *cmdcontext.CmdCtx, searchCtx install_ee.SearchEECtx,
+	cliOpts *config.CliOpts, program string) error {
 	var repo string
 	versions := []version.Version{}
 
@@ -177,12 +178,12 @@ func SearchVersions(cmdCtx *cmdcontext.CmdCtx, cliOpts *config.CliOpts, program 
 	var err error
 	log.Infof("Available versions of " + program + ":")
 	if program == "tarantool-ee" {
-		versions, err = install_ee.FetchVersions(cliOpts)
+		versions, err := install_ee.FetchVersions(searchCtx, cliOpts)
 		if err != nil {
 			log.Fatalf(err.Error())
 		}
 		for _, version := range versions {
-			printVersion(cliOpts.App.BinDir, program, version.Str)
+			printVersion(cliOpts.App.BinDir, program, version.VersionInfo.Str)
 		}
 		return nil
 	}
@@ -271,7 +272,7 @@ func SearchVersionsLocal(cmdCtx *cmdcontext.CmdCtx, cliOpts *config.CliOpts, pro
 		}
 
 		for _, version := range versions {
-			printVersion(cliOpts.App.BinDir, program, version.Str)
+			printVersion(cliOpts.App.BinDir, program, version.VersionInfo.Str)
 		}
 	} else {
 		return fmt.Errorf("search supports only tarantool/tarantool-ee/tt")

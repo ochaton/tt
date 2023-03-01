@@ -14,7 +14,7 @@ type getVersionsInputValue struct {
 }
 
 type getVersionsOutputValue struct {
-	result []version.Version
+	result []EEVersion
 	err    error
 }
 
@@ -40,35 +40,30 @@ func TestGetVersions(t *testing.T) {
 	osName := ""
 	switch osType {
 	case util.OsLinux:
-		if arch == "x86_64" {
-			arch = ""
-		}
+		osName = ".linux."
 	case util.OsMacos:
-		osName = "-macosx-"
+		osName = ".macos."
 	}
 
-	inputData1 = []byte(`<a href="/enterprise/tarantool-enterprise-bundle-` +
-		`1.10.10-52-g0df29b137-r419` + osName + arch +
-		`.tar.gz">tarantool-enterprise-bundle-1.10.10-` +
-		`52-g0df29b137-r419` + osName + arch + `.tar.gz</a>` +
-		`                                      2021-08-18 ` +
-		`15:56:04                   260136444`)
+	inputData1 = []byte(`/enterprise/tarantool-enterprise-sdk-` +
+		`1.10.10-52-r419` + osName + arch +
+		`.tar.gz`)
 
 	testCases[getVersionsInputValue{data: &inputData1}] =
 		getVersionsOutputValue{
-			result: []version.Version{
-				version.Version{
+			result: []EEVersion{
+				EEVersion{VersionInfo: version.Version{
 					Major:      1,
 					Minor:      10,
 					Patch:      10,
 					Additional: 52,
 					Revision:   419,
 					Release:    version.Release{Type: version.TypeRelease},
-					Hash:       "g0df29b137",
-					Str:        "1.10.10-52-g0df29b137-r419",
-					Tarball: "tarantool-enterprise-bundle-1.10.10-52-g0df29b137-r419" +
+					Hash:       "",
+					Str:        "1.10.10-52-r419",
+					Tarball: "tarantool-enterprise-sdk-1.10.10-52-r419" +
 						osName + arch + ".tar.gz",
-				},
+				}, Prefix: "/enterprise/"},
 			},
 			err: nil,
 		}
@@ -129,5 +124,79 @@ func TestGetCredsFromFile(t *testing.T) {
 		} else {
 			assert.Equal(output.err.Error(), err.Error())
 		}
+	}
+}
+
+func Test_getVersionFromName(t *testing.T) {
+	type args struct {
+		bundleName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Plain test",
+			args: args{
+				bundleName: "testtest.test.test/test/asdsada1.10sdsad/",
+			},
+			want: "1.10",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return true
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getShortVersionFromBundleName(tt.args.bundleName)
+			if !tt.wantErr(t, err, fmt.Sprintf("getVersionFromName(%v)", tt.args.bundleName)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "getVersionFromName(%v)", tt.args.bundleName)
+		})
+	}
+}
+
+func Test_getCredsFromEnvVars(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func()
+		want    userCredentials
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name:    "Environment variables are not passed",
+			prepare: func() {},
+			want:    userCredentials{username: "", password: ""},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if err.Error() == "no credentials in environment variables were found" {
+					return true
+				}
+				return false
+			},
+		},
+		{
+			name: "Environment variables are passed",
+			prepare: func() {
+				t.Setenv("TT_EE_USERNAME", "tt_test")
+				t.Setenv("TT_EE_PASSWORD", "tt_test")
+			},
+			want: userCredentials{username: "tt_test", password: "tt_test"},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return true
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.prepare()
+			got, err := getCredsFromEnvVars()
+			if !tt.wantErr(t, err, fmt.Sprintf("getCredsFromEnvVars()")) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "getCredsFromEnvVars()")
+		})
 	}
 }

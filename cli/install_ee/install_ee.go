@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/tarantool/tt/cli/config"
 	"github.com/tarantool/tt/cli/util"
@@ -16,26 +16,24 @@ import (
 )
 
 const (
-	eeSourceLinux string = "https://download.tarantool.io/enterprise/"
-	eeSourceMacos string = "https://download.tarantool.io/enterprise-macos/"
+	eeMacosOldPrefix = "/enterprise-macos/"
+	eeCommonPrefix   = "/enterprise/"
+	eeSource         = "https://download.tarantool.io/"
+	eeReleasePrefix  = "/enterprise/release/"
+	eeDebugPrefix    = "/enterprise/debug/"
+	eeDevPrefix      = "/enterprise/dev/"
 )
 
-// getTarballName extracts tarball name from html data.
-func getTarballName(data string) (string, error) {
-	re := regexp.MustCompile(">(.*)<")
-
-	parsedData := re.FindStringSubmatch(data)
-	if len(parsedData) == 0 {
-		return "", fmt.Errorf("cannot parse tarball name")
-	}
-
-	return parsedData[1], nil
+// SearchEECtx contains information for packages searching.
+type SearchEECtx struct {
+	// Dbg is set if debug builds of tarantool-ee must be included in the result of search.
+	Dbg bool
+	// Dev is set if dev builds of tarantool-ee must be included in the result of search.
+	Dev bool
 }
 
-// getVersions collects a list of all available tarantool-ee
-// versions for the host architecture.
-func getVersions(data *[]byte) ([]version.Version, error) {
-	versions := []version.Version{}
+// compileVersionRegexp compiles a regular expression for SDK bundle names.
+func compileVersionRegexp() (*regexp.Regexp, error) {
 	matchRe := ""
 
 	arch, err := util.GetArch()
@@ -50,101 +48,57 @@ func getVersions(data *[]byte) ([]version.Version, error) {
 
 	switch osType {
 	case util.OsLinux:
-		// Bundles without specifying the architecture are all x86_64.
-		if arch == "x86_64" {
-			matchRe = ".*>tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3}(?:-nogc64)?)(?:-linux-x86_64)?\\.tar\\.gz<.*"
-		} else {
-			matchRe = ".*>tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3}(?:-nogc64)?)(?:-linux-" + arch + ")\\.tar\\.gz<.*"
-		}
+		matchRe = "(.+\\/)(tarantool-enterprise-(?:sdk|bundle)-(?:(?:no)?gc64)?(?:-)?" +
+			"(.*r[0-9]{3})?(?:(?:(?:-|\\.)(?:no)?gc64)?(?:.linux.)?" +
+			arch + ")?.tar.gz)"
 	case util.OsMacos:
-		// Bundles without specifying the architecture are all x86_64.
-		if arch == "x86_64" {
-			matchRe = ".*>tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3})-macos(?:x-x86_64)?\\.tar\\.gz<.*"
-		} else {
-			matchRe = ".*>tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3})(?:-macosx-" + arch + ")\\.tar\\.gz<.*"
-		}
+		matchRe = "(.+\\/)(tarantool-enterprise-(?:sdk|bundle)-(?:(?:no)?gc64)?(?:-)?" +
+			"(.*r[0-9]{3})(?:-|\\.)macos(?:x)?(?:-|\\.)" +
+			arch + "\\.tar\\.gz)"
 	}
 
 	re := regexp.MustCompile(matchRe)
+
+	return re, nil
+}
+
+// getVersions collects a list of all available tarantool-ee
+// versions for the host architecture.
+func getVersions(data *[]byte) ([]EEVersion, error) {
+	versions := []EEVersion{}
+
+	re, err := compileVersionRegexp()
+	if err != nil {
+		return nil, err
+	}
+
 	parsedData := re.FindAllStringSubmatch(strings.TrimSpace(string(*data)), -1)
 	if len(parsedData) == 0 {
 		return nil, fmt.Errorf("no packages for this OS")
 	}
 
 	for _, entry := range parsedData {
-		version, err := version.GetVersionDetails(entry[1])
+		version, err := version.GetVersionDetails(entry[3])
 		if err != nil {
 			return nil, err
 		}
-		version.Tarball, err = getTarballName(entry[0])
-		if err != nil {
-			return nil, err
-		}
-		versions = append(versions, version)
+		version.Tarball = entry[2]
+		eeVersion := EEVersion{VersionInfo: version, Prefix: entry[1]}
+		versions = append(versions, eeVersion)
 	}
 
-	version.SortVersions(versions)
+	SortEEVersions(versions)
 
 	return versions, nil
 }
 
-// getTarballURL returns a tarball address for the target operating system.
-func getTarballURL() (string, error) {
-	osType, err := util.GetOs()
-	if err != nil {
-		return "", err
-	}
+func FetchVersionsLocal(files []string) ([]EEVersion, error) {
+	versions := []EEVersion{}
 
-	switch osType {
-	case util.OsLinux:
-		return eeSourceLinux, nil
-	case util.OsMacos:
-		return eeSourceMacos, nil
-	}
-
-	return "", fmt.Errorf("this operating system is not supported")
-}
-
-func FetchVersionsLocal(files []string) ([]version.Version, error) {
-	versions := []version.Version{}
-	matchRe := ""
-
-	arch, err := util.GetArch()
+	re, err := compileVersionRegexp()
 	if err != nil {
 		return nil, err
 	}
-
-	osType, err := util.GetOs()
-	if err != nil {
-		return nil, err
-	}
-
-	switch osType {
-	case util.OsLinux:
-		// Bundles without specifying the architecture are all x86_64.
-		if arch == "x86_64" {
-			matchRe = "^tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3}(?:-nogc64)?)(?:-linux-x86_64)?\\.tar\\.gz$"
-		} else {
-			matchRe = "^tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3}(?:-nogc64)?)(?:-linux-" + arch + ")\\.tar\\.gz$"
-		}
-	case util.OsMacos:
-		// Bundles without specifying the architecture are all x86_64.
-		if arch == "x86_64" {
-			matchRe = "^tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3})-macos(?:x-x86_64)?\\.tar\\.gz$"
-		} else {
-			matchRe = "^tarantool-enterprise-bundle-" +
-				"(.*-g[a-f0-9]+-r[0-9]{3})(?:-macosx-" + arch + ")\\.tar\\.gz$"
-		}
-	}
-
-	re := regexp.MustCompile(matchRe)
 
 	for _, file := range files {
 		parsedData := re.FindStringSubmatch(file)
@@ -158,48 +112,29 @@ func FetchVersionsLocal(files []string) ([]version.Version, error) {
 		}
 
 		version.Tarball = file
-		versions = append(versions, version)
+		eeVer := EEVersion{VersionInfo: version}
+		versions = append(versions, eeVer)
 	}
 
-	version.SortVersions(versions)
+	SortEEVersions(versions)
 
 	return versions, nil
 }
 
 // FetchVersions returns all available tarantool-ee versions.
 // The result will be sorted in ascending order.
-func FetchVersions(cliOpts *config.CliOpts) ([]version.Version, error) {
+func FetchVersions(searchCtx SearchEECtx, cliOpts *config.CliOpts) ([]EEVersion,
+	error) {
 	credentials, err := getCreds(cliOpts)
 	if err != nil {
 		return nil, err
 	}
 
-	source, err := getTarballURL()
+	bundleReferences, err := collectBundleReferences(searchCtx, eeSource, credentials)
 	if err != nil {
 		return nil, err
 	}
-
-	client := http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, source, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req.SetBasicAuth(credentials.username, credentials.password)
-
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	} else if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request error: %s", http.StatusText(res.StatusCode))
-	}
-
-	defer res.Body.Close()
-
-	resBody, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
+	resBody := []byte(strings.Join(bundleReferences, "\n"))
 
 	versions, err := getVersions(&resBody)
 	if err != nil {
@@ -209,8 +144,19 @@ func FetchVersions(cliOpts *config.CliOpts) ([]version.Version, error) {
 	return versions, nil
 }
 
+// getShortVersionFromBundleName parses the major and minor version from tarantool-sdk-bundle.
+func getShortVersionFromBundleName(bundleName string) (string, error) {
+	matchRe := "(\\d\\.\\d+)"
+	reg := regexp.MustCompile(matchRe)
+	res := reg.FindString(bundleName)
+	if res == "" {
+		return "", fmt.Errorf("no version found")
+	}
+	return res, nil
+}
+
 // GetTarantoolEE downloads given tarantool-ee bundle into directory.
-func GetTarantoolEE(cliOpts *config.CliOpts, bundleName string, dst string) error {
+func GetTarantoolEE(cliOpts *config.CliOpts, bundleName, bundleSource string, dst string) error {
 	if _, err := os.Stat(dst); os.IsNotExist(err) {
 		return fmt.Errorf("directory doesn't exist: %s", dst)
 	}
@@ -221,13 +167,16 @@ func GetTarantoolEE(cliOpts *config.CliOpts, bundleName string, dst string) erro
 	if err != nil {
 		return err
 	}
-	source, err := getTarballURL()
+
+	source, err := url.Parse(eeSource)
 	if err != nil {
 		return err
 	}
-	eeLink := source + bundleName
+	source.Path = bundleSource
+
+	source.Path = filepath.Join(source.Path, bundleName)
 	client := http.Client{Timeout: 0}
-	req, err := http.NewRequest(http.MethodGet, eeLink, http.NoBody)
+	req, err := http.NewRequest(http.MethodGet, source.String(), http.NoBody)
 	if err != nil {
 		return err
 	}
