@@ -3,7 +3,6 @@ package version
 import (
 	"fmt"
 	"regexp"
-	"sort"
 
 	"github.com/tarantool/tt/cli/util"
 )
@@ -16,6 +15,11 @@ const (
 	TypeBeta
 	TypeRC
 	TypeRelease
+
+	// VersionCliSeparator is used in commands to specify version. E.g: program=version.
+	CliSeparator = "="
+	// VersionFsSeparator is used in file names to specify version. E.g: program_version.
+	FsSeparator = "_"
 )
 
 type Release struct {
@@ -35,8 +39,8 @@ type Version struct {
 	Tarball    string  // Tarball name.
 }
 
-// GetVersionDetails collects information about all version details.
-func GetVersionDetails(verStr string) (Version, error) {
+// Parse parses a version string and return the version value it represents.
+func Parse(verStr string) (Version, error) {
 	version := Version{}
 	var err error
 
@@ -52,7 +56,7 @@ func GetVersionDetails(verStr string) (Version, error) {
 
 	matches := util.FindNamedMatches(re, verStr)
 	if len(matches) == 0 {
-		return version, fmt.Errorf("failed to parse version: format is not valid")
+		return version, fmt.Errorf("failed to parse version %q: format is not valid", verStr)
 	}
 
 	if matches["release"] != "" {
@@ -107,36 +111,47 @@ func GetVersionDetails(verStr string) (Version, error) {
 	return version, nil
 }
 
-// SortVersions sorts versions from oldest to newest.
-func SortVersions(versions []Version) {
-	sort.SliceStable(versions, func(i, j int) bool {
-		verLeft := versions[i]
-		verRight := versions[j]
+// VersionSlice attaches the methods of sort.Interface to []Version, sorting from oldest to newest.
+type VersionSlice []Version
 
-		left := []uint64{verLeft.Major, verLeft.Minor,
-			verLeft.Patch, uint64(verLeft.Release.Type),
-			verLeft.Release.Num, verLeft.Additional, verLeft.Revision}
-		right := []uint64{verRight.Major, verRight.Minor,
-			verRight.Patch, uint64(verRight.Release.Type),
-			verRight.Release.Num, verRight.Additional, verRight.Revision}
+// sort.Interface Len implementation
+func (v VersionSlice) Len() int {
+	return len(v)
+}
 
-		largestLen := util.Max(len(left), len(right))
+// sort.Interface Less implementation, sorts from oldest to newest
+func (v VersionSlice) Less(i, j int) bool {
+	verLeft := v[i]
+	verRight := v[j]
 
-		for i := 0; i < largestLen; i++ {
-			var valLeft, valRight uint64 = 0, 0
-			if i < len(left) {
-				valLeft = left[i]
-			}
+	left := []uint64{verLeft.Major, verLeft.Minor,
+		verLeft.Patch, uint64(verLeft.Release.Type),
+		verLeft.Release.Num, verLeft.Additional, verLeft.Revision}
+	right := []uint64{verRight.Major, verRight.Minor,
+		verRight.Patch, uint64(verRight.Release.Type),
+		verRight.Release.Num, verRight.Additional, verRight.Revision}
 
-			if i < len(right) {
-				valRight = right[i]
-			}
+	largestLen := util.Max(len(left), len(right))
 
-			if valLeft != valRight {
-				return valLeft < valRight
-			}
+	for i := 0; i < largestLen; i++ {
+		var valLeft, valRight uint64 = 0, 0
+		if i < len(left) {
+			valLeft = left[i]
 		}
 
-		return false
-	})
+		if i < len(right) {
+			valRight = right[i]
+		}
+
+		if valLeft != valRight {
+			return valLeft < valRight
+		}
+	}
+
+	return false
+}
+
+// sort.Interface Swap implementation
+func (v VersionSlice) Swap(i, j int) {
+	v[i], v[j] = v[j], v[i]
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -138,7 +139,7 @@ func getVersions(data *[]byte) ([]version.Version, error) {
 	}
 
 	for _, entry := range parsedData {
-		version, err := version.GetVersionDetails(entry[1])
+		version, err := version.Parse(entry[1])
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +150,7 @@ func getVersions(data *[]byte) ([]version.Version, error) {
 		versions = append(versions, version)
 	}
 
-	version.SortVersions(versions)
+	sort.Stable(version.VersionSlice(versions))
 
 	return versions, nil
 }
@@ -214,7 +215,7 @@ func FetchVersionsLocal(files []string) ([]version.Version, error) {
 			continue
 		}
 
-		version, err := version.GetVersionDetails(parsedData[1])
+		version, err := version.Parse(parsedData[1])
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +224,7 @@ func FetchVersionsLocal(files []string) ([]version.Version, error) {
 		versions = append(versions, version)
 	}
 
-	version.SortVersions(versions)
+	sort.Stable(version.VersionSlice(versions))
 
 	return versions, nil
 }

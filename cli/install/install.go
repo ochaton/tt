@@ -379,14 +379,14 @@ func copyBuildedTT(binDir, path, version string, installCtx InstallCtx,
 }
 
 // installTt installs selected version of tt.
-func installTt(version string, binDir string, installCtx InstallCtx, distfiles string) error {
+func installTt(versionStr string, binDir string, installCtx InstallCtx, distfiles string) error {
 	versions, err := getTTVersions(installCtx.Local, distfiles)
 	if err != nil {
 		return err
 	}
 
 	// Get latest version if it was not specified.
-	_, ttVersion, _ := strings.Cut(version, search.VersionCliSeparator)
+	_, ttVersion, _ := strings.Cut(versionStr, version.CliSeparator)
 	if ttVersion == "" {
 		log.Infof("Getting latest tt version..")
 		if len(versions) == 0 {
@@ -434,12 +434,12 @@ func installTt(version string, binDir string, installCtx InstallCtx, distfiles s
 		}
 	}
 
-	version = "tt" + search.VersionFsSeparator + ttVersion
+	versionStr = "tt" + version.FsSeparator + ttVersion
 	// Check if that version is already installed.
 	log.Infof("Checking existing...")
-	if checkExisting(version, binDir) && !installCtx.Reinstall {
-		log.Infof("%s version of tt already exists, updating symlink...", version)
-		err := util.CreateSymlink(version, filepath.Join(binDir, "tt"), true)
+	if checkExisting(versionStr, binDir) && !installCtx.Reinstall {
+		log.Infof("%s version of tt already exists, updating symlink...", versionStr)
+		err := util.CreateSymlink(versionStr, filepath.Join(binDir, "tt"), true)
 		log.Infof("Done")
 		return err
 	}
@@ -487,14 +487,14 @@ func installTt(version string, binDir string, installCtx InstallCtx, distfiles s
 
 	// Copy binary.
 	log.Infof("Copying executable...")
-	err = copyBuildedTT(binDir, path, version, installCtx, logFile)
+	err = copyBuildedTT(binDir, path, versionStr, installCtx, logFile)
 	if err != nil {
 		printLog(logFile.Name())
 		return err
 	}
 
 	// Set symlink.
-	err = util.CreateSymlink(version, filepath.Join(binDir, "tt"), true)
+	err = util.CreateSymlink(versionStr, filepath.Join(binDir, "tt"), true)
 	if err != nil {
 		printLog(logFile.Name())
 		return err
@@ -530,7 +530,7 @@ func patchTarantool(srcPath string, tarVersion string,
 		return nil
 	}
 
-	ver, err := version.GetVersionDetails(tarVersion)
+	ver, err := version.Parse(tarVersion)
 	if err != nil {
 		return err
 	}
@@ -580,7 +580,7 @@ func buildTarantool(srcPath string, tarVersion string,
 	// This feature is not supported by a backported static build.
 	btFlag := "ON"
 	if tarVersion != "master" {
-		version, err := version.GetVersionDetails(tarVersion)
+		version, err := version.Parse(tarVersion)
 		if err != nil {
 			return err
 		}
@@ -737,7 +737,7 @@ func installTarantoolInDocker(binDir string, incDir string, installCtx InstallCt
 }
 
 // installTarantool installs selected version of tarantool.
-func installTarantool(version string, binDir string, incDir string,
+func installTarantool(versionStr string, binDir string, incDir string,
 	installCtx InstallCtx, distfiles string) error {
 	// Check bin and header dirs.
 	if binDir == "" {
@@ -753,7 +753,7 @@ func installTarantool(version string, binDir string, incDir string,
 	}
 
 	// Get latest version if it was not specified.
-	_, tarVersion, _ := strings.Cut(version, search.VersionCliSeparator)
+	_, tarVersion, _ := strings.Cut(versionStr, version.CliSeparator)
 	if tarVersion == "" {
 		log.Infof("Getting latest tarantool version..")
 		if len(versions) == 0 {
@@ -778,11 +778,11 @@ func installTarantool(version string, binDir string, incDir string,
 		}
 	}
 
-	version = "tarantool" + search.VersionFsSeparator + tarVersion
+	versionStr = "tarantool" + version.FsSeparator + tarVersion
 	// Check if program is already installed.
 	if !installCtx.Reinstall {
 		log.Infof("Checking existing...")
-		versionExists, err := checkExistingTarantool(version,
+		versionExists, err := checkExistingTarantool(versionStr,
 			binDir, incDir, installCtx)
 		if err != nil || versionExists {
 			return err
@@ -849,15 +849,15 @@ func installTarantool(version string, binDir string, incDir string,
 	}
 	// Copy binary and headers.
 	if installCtx.Reinstall {
-		if checkExisting(version, binDir) {
+		if checkExisting(versionStr, binDir) {
 			log.Infof("%s version of tarantool already exists, removing files...",
-				version)
-			err = os.RemoveAll(filepath.Join(binDir, version))
+				versionStr)
+			err = os.RemoveAll(filepath.Join(binDir, versionStr))
 			if err != nil {
 				printLog(logFile.Name())
 				return err
 			}
-			err = os.RemoveAll(filepath.Join(incDir, version))
+			err = os.RemoveAll(filepath.Join(incDir, versionStr))
 		}
 	}
 	if err != nil {
@@ -867,7 +867,7 @@ func installTarantool(version string, binDir string, incDir string,
 	buildPath := filepath.Join(path, "/static-build/build")
 	binPath := filepath.Join(buildPath, "/tarantool-prefix/bin/tarantool")
 	incPath := filepath.Join(buildPath, "/tarantool-prefix/include/tarantool") + "/"
-	err = copyBuildedTarantool(binPath, incPath, binDir, incDir, version, installCtx,
+	err = copyBuildedTarantool(binPath, incPath, binDir, incDir, versionStr, installCtx,
 		logFile)
 	if err != nil {
 		printLog(logFile.Name())
@@ -875,12 +875,12 @@ func installTarantool(version string, binDir string, incDir string,
 	}
 	// Set symlinks.
 	log.Infof("Changing symlinks...")
-	err = util.CreateSymlink(version, filepath.Join(binDir, "tarantool"), true)
+	err = util.CreateSymlink(versionStr, filepath.Join(binDir, "tarantool"), true)
 	if err != nil {
 		printLog(logFile.Name())
 		return err
 	}
-	err = util.CreateSymlink(version, filepath.Join(incDir, "tarantool"), true)
+	err = util.CreateSymlink(versionStr, filepath.Join(incDir, "tarantool"), true)
 	if err != nil {
 		printLog(logFile.Name())
 		return err
@@ -912,7 +912,7 @@ func getTarantoolEEVersions(cliOpts *config.CliOpts, local bool,
 }
 
 // installTarantoolEE installs selected version of tarantool-ee.
-func installTarantoolEE(version string, binDir string, includeDir string, installCtx InstallCtx,
+func installTarantoolEE(versionStr string, binDir string, includeDir string, installCtx InstallCtx,
 	distfiles string, cliOpts *config.CliOpts) error {
 	var err error
 
@@ -935,7 +935,7 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 	}
 
 	// Get latest version if it was not specified.
-	_, tarVersion, _ := strings.Cut(version, search.VersionCliSeparator)
+	_, tarVersion, _ := strings.Cut(versionStr, version.CliSeparator)
 	if tarVersion == "" {
 		log.Infof("Getting latest tarantool-ee version..")
 		if len(versions) == 0 {
@@ -990,10 +990,10 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 		}
 	}
 
-	version = "tarantool-ee" + search.VersionFsSeparator + tarVersion
+	versionStr = "tarantool-ee" + version.FsSeparator + tarVersion
 	if !installCtx.Reinstall {
 		log.Infof("Checking existing...")
-		versionExists, err := checkExistingTarantool(version,
+		versionExists, err := checkExistingTarantool(versionStr,
 			binDir, includeDir, installCtx)
 		if err != nil || versionExists {
 			return err
@@ -1045,15 +1045,15 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 
 	// Copy binary and headers.
 	if installCtx.Reinstall {
-		if checkExisting(version, binDir) {
+		if checkExisting(versionStr, binDir) {
 			log.Infof("%s version of tarantool-ee already exists, removing files...",
-				version)
-			err = os.RemoveAll(filepath.Join(binDir, version))
+				versionStr)
+			err = os.RemoveAll(filepath.Join(binDir, versionStr))
 			if err != nil {
 				printLog(logFile.Name())
 				return err
 			}
-			err = os.RemoveAll(filepath.Join(includeDir, version))
+			err = os.RemoveAll(filepath.Join(includeDir, versionStr))
 		}
 	}
 	if err != nil {
@@ -1062,7 +1062,7 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 	}
 	binPath := filepath.Join(path, "/tarantool-enterprise/tarantool")
 	incPath := filepath.Join(path, "/tarantool-enterprise/include/tarantool") + "/"
-	err = copyBuildedTarantool(binPath, incPath, binDir, includeDir, version, installCtx,
+	err = copyBuildedTarantool(binPath, incPath, binDir, includeDir, versionStr, installCtx,
 		logFile)
 	if err != nil {
 		printLog(logFile.Name())
@@ -1071,11 +1071,11 @@ func installTarantoolEE(version string, binDir string, includeDir string, instal
 
 	// Set symlinks.
 	log.Infof("Changing symlinks...")
-	err = util.CreateSymlink(version, filepath.Join(binDir, "tarantool"), true)
+	err = util.CreateSymlink(versionStr, filepath.Join(binDir, "tarantool"), true)
 	if err != nil {
 		return err
 	}
-	err = util.CreateSymlink(version, filepath.Join(includeDir, "tarantool"), true)
+	err = util.CreateSymlink(versionStr, filepath.Join(includeDir, "tarantool"), true)
 	if err != nil {
 		printLog(logFile.Name())
 		return err
@@ -1115,7 +1115,7 @@ func FillCtx(cmdCtx *cmdcontext.CmdCtx, installCtx *InstallCtx, args []string) e
 	}
 
 	re := regexp.MustCompile(
-		"^(?P<prog>tt|tarantool|tarantool-ee)(?:" + search.VersionCliSeparator + ".*)?$",
+		"^(?P<prog>tt|tarantool|tarantool-ee)(?:" + version.CliSeparator + ".*)?$",
 	)
 	matches := util.FindNamedMatches(re, args[0])
 	if len(matches) == 0 {
